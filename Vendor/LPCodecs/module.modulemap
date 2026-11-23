@@ -1,0 +1,5 @@
+module LPCodecs {
+    header "lp_codecs.h"
+    link "LPCodecs"
+    export *
+}
