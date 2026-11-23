@@ -3,12 +3,13 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
-enum Platform: Int { case original, spotify, youtube
+enum Platform: Int { case original, spotify, youtube, soundcloud
     var tint: Color {
         switch self {
         case .original: .accentColor
         case .spotify: Color(red: 0.12, green: 0.80, blue: 0.38)
         case .youtube: Color(red: 1, green: 0.22, blue: 0.22)
+        case .soundcloud: Color(red: 1, green: 0.42, blue: 0.0)
         }
     }
 }
@@ -23,12 +24,14 @@ enum SpotifyLevel: Int, CaseIterable, Identifiable {
 struct TrackInfo {
     let lufs: Double
     let truePeakDB: Double
+    let sourceRate: Double
     let frames: Int
     let duration: Double
     let waveform: [Float]
     let loudWaveform: [Float]?          // with Spotify Loud limiter (lossless)
     let spotifyGain: [Double]           // per SpotifyLevel
     let youtubeGain: Double
+    let soundcloudGain: Double
     let codecTP: [Double]               // decoded true peak per codec, before gain
     let loudTP: [Double?]               // after Loud gain + limiter, per codec
     let loudLUFS: [Double?]
@@ -79,6 +82,7 @@ final class Model: ObservableObject {
     @Published var spotifyLevel: SpotifyLevel = .normal { didSet { push() } }
     @Published var spotifyCodec: Codec = .vorbis160 { didSet { push() } }
     @Published var youtubeCodec: Codec = .opus { didSet { push() } }
+    @Published var soundcloudCodec: Codec = .aac160 { didSet { push() } }
     @Published var isPlaying = false
     @Published var time: Double = 0
 
@@ -102,6 +106,8 @@ final class Model: ObservableObject {
                            limiter: spotifyLevel == .loud && info.limiterCodecs.contains(spotifyCodec.rawValue))
         case .youtube:
             return Setting(codec: youtubeCodec, gainDB: info.youtubeGain, limiter: false)
+        case .soundcloud:
+            return Setting(codec: soundcloudCodec, gainDB: info.soundcloudGain, limiter: false)
         }
     }
 
@@ -121,6 +127,10 @@ final class Model: ObservableObject {
             let g = info.youtubeGain
             return Readout(gainDB: g, lufs: info.lufs + g,
                            truePeakDB: info.codecTP[youtubeCodec.rawValue] + g, limited: false)
+        case .soundcloud:
+            let g = info.soundcloudGain
+            return Readout(gainDB: g, lufs: info.lufs + g,
+                           truePeakDB: info.codecTP[soundcloudCodec.rawValue] + g, limited: false)
         }
     }
 
@@ -205,6 +215,12 @@ final class Model: ObservableObject {
         }
         // YouTube: -14 LUFS, attenuation only
         let youtubeGain = finite ? min(0, -14 - L) : 0
+        // SoundCloud: -14 LUFS; quiet masters raised only up to -1 dBTP
+        let soundcloudGain: Double = {
+            guard finite else { return 0 }
+            let g = -14 - L
+            return g > 0 ? max(0, min(g, -1 - tp)) : g
+        }()
         let gLoud = spotifyGain[SpotifyLevel.loud.rawValue]
 
         // Encode → decode every codec in parallel
@@ -264,9 +280,9 @@ final class Model: ObservableObject {
         let loudWave = envelopes[0].map { Processing.waveform(Processing.apply(base, gain: 1, envelope: $0), buckets: 1600) }
         let limiterCodecs = Set(envelopes.indices.filter { envelopes[$0] != nil })
 
-        let info = TrackInfo(lufs: L, truePeakDB: tp, frames: frames, duration: Double(frames) / playRate,
+        let info = TrackInfo(lufs: L, truePeakDB: tp, sourceRate: fs, frames: frames, duration: Double(frames) / playRate,
                              waveform: wave, loudWaveform: loudWave, spotifyGain: spotifyGain,
-                             youtubeGain: youtubeGain, codecTP: codecTP, loudTP: loudTP,
+                             youtubeGain: youtubeGain, soundcloudGain: soundcloudGain, codecTP: codecTP, loudTP: loudTP,
                              loudLUFS: loudLUFS, limiterCodecs: limiterCodecs)
         return Processed(info: info, audio: TrackAudio(frames: frames, versions: versions, envelopes: envelopes))
     }

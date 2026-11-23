@@ -3,7 +3,7 @@ import AVFoundation
 import LPCodecs
 
 enum Codec: Int, CaseIterable, Identifiable, Sendable {
-    case lossless, vorbis320, vorbis160, vorbis96, opus, aac128
+    case lossless, vorbis320, vorbis160, vorbis96, opus, aac128, aac160, aac256, opus64
     var id: Int { rawValue }
 
     var label: String {
@@ -14,11 +14,15 @@ enum Codec: Int, CaseIterable, Identifiable, Sendable {
         case .vorbis96: "Ogg 96"
         case .opus: "Opus"
         case .aac128: "AAC 128"
+        case .aac160: "AAC 160"
+        case .aac256: "AAC 256"
+        case .opus64: "Opus 64"
         }
     }
 
     static let spotify: [Codec] = [.lossless, .vorbis320, .vorbis160, .vorbis96]
     static let youtube: [Codec] = [.opus, .aac128]
+    static let soundcloud: [Codec] = [.aac160, .aac256, .opus64]
 }
 
 enum CodecError: Error { case encode, decode }
@@ -35,6 +39,10 @@ enum CodecEngine {
         // YouTube: itag 251 (Opus ~128 kbps, 48 kHz), itag 140 (AAC-LC 128 kbps, 44.1 kHz)
         case .opus: return try opus(chs, fs: fs, bitrate: 128_000)
         case .aac128: return try toolbox(chs, fs: fs, format: kAudioFormatMPEG4AAC, fileRate: 44100, bitrate: 128_000, ext: "m4a")
+        // SoundCloud: HLS AAC 160 (standard), AAC 256 (Go+), legacy HLS Opus 64
+        case .aac160: return try toolbox(chs, fs: fs, format: kAudioFormatMPEG4AAC, fileRate: 44100, bitrate: 160_000, ext: "m4a")
+        case .aac256: return try toolbox(chs, fs: fs, format: kAudioFormatMPEG4AAC, fileRate: 44100, bitrate: 256_000, ext: "m4a")
+        case .opus64: return try opus(chs, fs: fs, bitrate: 64_000)
         }
     }
 

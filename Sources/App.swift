@@ -10,7 +10,7 @@ struct LoudnessPreviewApp: App {
         Window("Loudness Preview", id: "main") {
             ContentView()
                 .environmentObject(model)
-                .frame(minWidth: 680, idealWidth: 820, minHeight: 520, idealHeight: 640)
+                .frame(minWidth: 820, idealWidth: 960, minHeight: 520, idealHeight: 640)
                 .ignoresSafeArea(.container, edges: .top)
                 .onReceive(NotificationCenter.default.publisher(for: .openAudio)) { n in
                     if let urls = n.object as? [URL] { model.add(urls) }
@@ -44,6 +44,10 @@ enum Fmt {
         if r == 0 { return "0.0" }
         let s = String(format: "%.1f", abs(r))
         return r > 0 ? (signed ? "+" + s : s) : "−" + s
+    }
+    static func khz(_ r: Double) -> String {
+        let k = r / 1000
+        return (k == k.rounded() ? String(format: "%.0f", k) : String(format: "%.1f", k)) + " kHz"
     }
     static func time(_ t: Double) -> String {
         let s = Int(max(t, 0))
@@ -143,6 +147,7 @@ struct MainView: View {
             Button("") { model.platform = .original }.keyboardShortcut("1", modifiers: [])
             Button("") { model.spotifyKey() }.keyboardShortcut("2", modifiers: [])
             Button("") { model.platform = .youtube }.keyboardShortcut("3", modifiers: [])
+            Button("") { model.platform = .soundcloud }.keyboardShortcut("4", modifiers: [])
         }
         .opacity(0)
         .allowsHitTesting(false)
@@ -320,23 +325,31 @@ struct ModeBar: View {
         let info = model.active?.info
         HStack(spacing: 10) {
             ModeCard(title: "Original", key: "1", platform: .original,
-                     readout: info.map { model.readout($0, platform: .original) }) { EmptyView() }
+                     readout: info.map { model.readout($0, platform: .original) }) {
+                if let t = model.active, let i = t.info {
+                    Chip(text: "\(t.url.pathExtension.uppercased()) · \(Fmt.khz(i.sourceRate))", menu: false)
+                }
+            }
             ModeCard(title: "Spotify", key: "2", platform: .spotify,
                      readout: info.map { model.readout($0, platform: .spotify) }) { SpotifyMenu() }
             ModeCard(title: "YouTube", key: "3", platform: .youtube,
                      readout: info.map { model.readout($0, platform: .youtube) }) { YouTubeMenu() }
+            ModeCard(title: "SoundCloud", key: "4", platform: .soundcloud,
+                     readout: info.map { model.readout($0, platform: .soundcloud) }) { SoundCloudMenu() }
         }
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
 struct Chip: View {
     let text: String
     var highlight = false
+    var menu = true
 
     var body: some View {
         HStack(spacing: 3) {
             Text(text)
-            Image(systemName: "chevron.up.chevron.down").font(.system(size: 7, weight: .bold))
+            if menu { Image(systemName: "chevron.up.chevron.down").font(.system(size: 7, weight: .bold)) }
         }
         .font(.system(size: 10.5, weight: .semibold))
         .foregroundStyle(highlight ? Color.orange : Color.secondary)
@@ -388,6 +401,23 @@ struct YouTubeMenu: View {
     }
 }
 
+struct SoundCloudMenu: View {
+    @EnvironmentObject var model: Model
+
+    var body: some View {
+        Menu {
+            Picker("", selection: Binding(get: { model.soundcloudCodec },
+                                          set: { model.soundcloudCodec = $0; model.platform = .soundcloud })) {
+                ForEach(Codec.soundcloud) { Text($0.label).tag($0) }
+            }
+            .pickerStyle(.inline).labelsHidden()
+        } label: {
+            Chip(text: model.soundcloudCodec.label)
+        }
+        .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+    }
+}
+
 struct ModeCard<Accessory: View>: View {
     @EnvironmentObject var model: Model
     let title: String
@@ -399,28 +429,33 @@ struct ModeCard<Accessory: View>: View {
 
     private var selected: Bool { model.platform == platform }
 
+    @ViewBuilder private var header: some View {
+        let tint = platform.tint
+        HStack(spacing: 6) {
+            if platform != .original { Circle().fill(tint).frame(width: 7, height: 7) }
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(selected ? .primary : .secondary)
+            Spacer(minLength: 4)
+            if readout?.limited == true {
+                Text("LIM")
+                    .font(.system(size: 9, weight: .bold))
+                    .padding(.horizontal, 5).padding(.vertical, 2)
+                    .background(Capsule().fill(Color.orange.opacity(0.2)))
+                    .foregroundStyle(Color.orange)
+            }
+            Text(key)
+                .font(.system(size: 10, weight: .medium, design: .rounded))
+                .foregroundStyle(.tertiary)
+        }
+        .frame(height: 20)
+    }
+
     var body: some View {
         let tint = platform.tint
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                if platform != .original { Circle().fill(tint).frame(width: 7, height: 7) }
-                Text(title)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(selected ? .primary : .secondary)
-                accessory()
-                Spacer(minLength: 4)
-                if readout?.limited == true {
-                    Text("LIM")
-                        .font(.system(size: 9, weight: .bold))
-                        .padding(.horizontal, 5).padding(.vertical, 2)
-                        .background(Capsule().fill(Color.orange.opacity(0.2)))
-                        .foregroundStyle(Color.orange)
-                }
-                Text(key)
-                    .font(.system(size: 10, weight: .medium, design: .rounded))
-                    .foregroundStyle(.tertiary)
-            }
-            .frame(height: 20)
+            header
+            HStack { accessory() }.frame(height: 20)
             HStack(alignment: .firstTextBaseline, spacing: 3) {
                 Text(readout.map { Fmt.db($0.gainDB) } ?? "–")
                     .font(.system(size: 26, weight: .semibold, design: .rounded))
@@ -438,7 +473,7 @@ struct ModeCard<Accessory: View>: View {
             .foregroundStyle(.secondary)
         }
         .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(selected ? tint.opacity(0.13) : Color.primary.opacity(hover.on ? 0.06 : 0.035))

@@ -1,2 +1,7 @@
 build/
 .DS_Store
+Windows/wasm/lpcore.wasm
+Windows/app/ui/lpcore.js
+Windows/app/ui/lpcore.wasm
+Windows/app/assets/icon*.png
+Windows/app/assets/icon.ico
